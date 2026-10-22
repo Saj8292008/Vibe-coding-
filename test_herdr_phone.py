@@ -168,5 +168,32 @@ class BridgeTest(unittest.TestCase):
         self.assertIn("w1:p1", notes[0])
 
 
+class SelfCheckTest(unittest.TestCase):
+    def test_check_runs_clean_and_sends_nothing(self):
+        import io
+        from contextlib import redirect_stdout
+
+        fake = FakeHerdr()
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = hp.self_check(hp.Herdr(fake.path))
+            self.assertEqual(rc, 0, buf.getvalue())
+            self.assertNotIn("❌", buf.getvalue())
+            self.assertEqual([c for c in fake.calls if c["method"] in ("agent.prompt", "agent.send_keys")], [])
+        finally:
+            fake.close()
+
+    def test_check_reports_unreachable(self):
+        import io
+        from contextlib import redirect_stdout
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = hp.self_check(hp.Herdr("/nonexistent/herdr.sock"))
+        self.assertEqual(rc, 1)
+        self.assertIn("Is herdr running", buf.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

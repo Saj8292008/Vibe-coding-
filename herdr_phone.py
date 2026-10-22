@@ -506,6 +506,48 @@ def load_dotenv(path: Path):
         os.environ.setdefault(k.strip(), v.strip().strip("'\""))
 
 
+def self_check(herdr: Herdr) -> int:
+    """Try every herdr call the phone HUD and bot make, and say what works."""
+    ok = True
+
+    def step(name, fn):
+        nonlocal ok
+        try:
+            detail = fn()
+            print(f"  ✅ {name}" + (f" — {detail}" if detail else ""))
+            return True
+        except Exception as e:
+            ok = False
+            print(f"  ❌ {name} — {e}")
+            return False
+
+    print(f"herdr socket: {herdr.path}")
+    if not step("connect to herdr", lambda: herdr.call("ping", timeout=3) and "pong"):
+        print("\nIs herdr running? Start it (run `herdr`) and try again.")
+        return 1
+    agents: list[dict] = []
+
+    def list_agents():
+        agents[:] = herdr.agents()
+        return f"{len(agents)} agent(s): " + ", ".join(f"{agent_label(a)} [{a.get('agent_status')}]" for a in agents)
+
+    step("list agents", list_agents)
+    step("list workspaces", lambda: f"{len(herdr.call('workspace.list').get('workspaces', []))}")
+    step("list tabs", lambda: f"{len(herdr.call('tab.list').get('tabs', []))}")
+    if agents:
+        a = agents[0]
+        step("get agent", lambda: herdr.call("agent.get", {"target": a["pane_id"]})["agent"]["pane_id"])
+        for src in ("recent", "recent_unwrapped"):
+            step(
+                f"read output ({src})",
+                lambda src=src: f"{len(herdr.call('agent.read', {'target': a['pane_id'], 'source': src, 'lines': 20}).get('read', {}).get('text', ''))} chars",
+            )
+    else:
+        print("  ⚠️  no agents running — start one in herdr (e.g. `claude`) to check reading and prompting")
+    print("\nNothing was sent to any agent." if ok else "\nSome checks failed; please share the lines above.")
+    return 0 if ok else 1
+
+
 def main(argv: list[str]) -> int:
     global BOT_TOKEN, CHAT_ID
     load_dotenv(Path(__file__).with_name(".env"))
@@ -521,6 +563,8 @@ def main(argv: list[str]) -> int:
         return 0
 
     herdr = Herdr(socket_path())
+    if "--check" in argv:
+        return self_check(herdr)
     try:
         herdr.call("ping", timeout=3)
         print(f"[herdr-phone] connected to herdr at {herdr.path}")

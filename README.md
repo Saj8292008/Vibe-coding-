@@ -33,6 +33,12 @@ It prints a private link, for example:
     http://100.101.102.103:8787/?token=Zk3…
 ```
 
+Before involving your phone, you can check that it can talk to herdr. This sends nothing to any agent:
+
+```bash
+python3 herdr_phone.py --check
+```
+
 ### 2. Open the link on your phone
 
 Your phone has to be able to reach the computer. Either option works:
