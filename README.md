@@ -1,125 +1,136 @@
-# herdr-phone 📱 → 🐑
+# Herdr HUD Mobile 📱
 
-Message your [herdr](https://github.com/ogulcancelik/herdr) agents from your phone while you're scrolling Instagram or playing a game.
+Message your [Herdr](https://herdr.dev) agents from your phone while you're scrolling Instagram or playing a game.
 
-herdr's own phone setup means opening an SSH app and using the full terminal UI. That's fine at a desk, but you can't do it in between Reels. herdr-phone is a small Telegram bot that runs next to herdr on your computer:
+This is a phone version of [Herdr HUD](https://github.com/finna/herdr-hud), the desktop overlay that shows your agents over a game. It runs on the computer where Herdr runs and has two parts:
 
-- **It pings you** when an agent ✅ **finishes** or 🟡 **needs you** (an approval or a question). The ping is a normal notification banner, so it shows up on top of Instagram or a game, and you can answer from the banner.
-- **Reply to a ping** to send that agent your next prompt.
-- **Tap buttons** to approve, pick option 1/2/3, press Enter or Esc, or Ctrl‑C.
-- **Just type** to talk to whichever agent you picked last.
+- **Phone HUD:** the same Herdr HUD agent list, chat view and prompt box, shown in your phone's browser. You can add it to your Home Screen so it opens like an app.
+- **Telegram pings (optional):** you get a notification when an agent ✅ finishes or 🟡 needs you. The notification shows on top of Instagram or a game. Reply to it to prompt that agent, or tap a button to approve. A button in each ping opens the full HUD.
+
+<p>
+<img src="assets/phone-roster.png" width="260" alt="Agent list on a phone">
+<img src="assets/phone-chat.png" width="260" alt="Agent chat and prompt box on a phone">
+</p>
+
+There's nothing to install: it's Python 3 using only the standard library. The bot doesn't open any public ports, and your agents never leave your computer.
+
+## Setup
+
+You need Herdr running with at least one agent ([Herdr HUD's getting-started guide](https://github.com/finna/herdr-hud/blob/main/docs/getting-started.md) covers that).
+
+### 1. Run it on the computer where your agents run
+
+```bash
+git clone https://github.com/Saj8292008/Vibe-coding-.git herdr-hud-mobile
+cd herdr-hud-mobile
+python3 herdr_phone.py
+```
+
+It prints a private link, for example:
 
 ```
-🟡 needs you · claude · w1:p1 — api
-┌──────────────────────────────────┐
-│ Allow edit to src/auth.rs?       │
-│ ❯ 1. Yes                         │
-│   2. Yes, don't ask again        │
-│   3. No, tell Claude what to do  │
-└──────────────────────────────────┘
-[ 1 ] [ 2 ] [ 3 ] [ ⏎ Enter ]
-[ ✅ y ] [ ❌ n ] [ ⎋ Esc ] [ ⛔ Ctrl-C ]
-[ 📜 Show more ] [ 🎯 Talk to this one ]
+[herdr-phone] phone HUD — open on your phone, then Add to Home Screen:
+    http://100.101.102.103:8787/?token=Zk3…
 ```
 
-There's nothing to install: it's one Python file that uses only the standard library. It also doesn't open any ports or need a tunnel. The bot only makes outbound HTTPS calls to Telegram and talks to herdr through herdr's local socket.
+### 2. Open the link on your phone
 
-## Setup (about 3 minutes)
+Your phone has to be able to reach the computer. Either option works:
 
-1. **Create your bot.** In Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot`, and copy the token it gives you.
+- **[Tailscale](https://tailscale.com) (recommended):** install it on your computer and your phone and sign in to the same account. The link then works anywhere, on cellular too, and the connection is encrypted. If Tailscale is running, herdr-phone prints a `100.x.x.x` link automatically.
+- **Same Wi-Fi:** use the link with your computer's local IP address. This only works at home, and traffic isn't encrypted on your Wi-Fi.
 
-2. **On the computer where herdr runs:**
+After the link opens:
 
-   ```bash
-   git clone https://github.com/Saj8292008/Vibe-coding-.git herdr-phone
-   cd herdr-phone
-   cp .env.example .env
-   # paste your token into .env as TELEGRAM_BOT_TOKEN=...
-   ```
+- **iPhone (Safari):** tap Share, then **Add to Home Screen**.
+- **Android (Chrome):** open the ⋮ menu, then tap **Add to Home screen** (or **Install app**).
 
-3. **Find your chat id.** Only your chat id is allowed to control your agents.
+The link is your password. After the first visit it's saved as a cookie, so the Home Screen icon opens straight to your agents.
 
-   ```bash
-   python3 herdr_phone.py --whoami
-   ```
+### 3. (Optional) Turn on Telegram pings
 
-   Send your bot any message in Telegram. The script prints `TELEGRAM_CHAT_ID=123456`. Put that line in `.env`.
+With pings, you don't have to keep checking the HUD:
 
-4. **Run it.** Start herdr first, as you normally do, and then run:
+1. In Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot`, and copy the token.
+2. Run `cp .env.example .env` and paste the token in as `TELEGRAM_BOT_TOKEN=…`.
+3. Run `python3 herdr_phone.py --whoami`, then send your bot any message. Put the `TELEGRAM_CHAT_ID=…` line it prints into `.env`.
+4. Run `python3 herdr_phone.py` again.
 
-   ```bash
-   python3 herdr_phone.py
-   ```
+## Using it
 
-   Your phone gets the message "📱 herdr-phone is online". Send `/agents` to check it's working.
+**In the HUD:** tap an agent to read its latest output. Codex output shows as chat; switch to **Terminal** to see the raw text. Type in the box and tap **Send prompt**. On a phone, Return adds a new line and only the button sends. The list updates every couple of seconds and refreshes as soon as you switch back from another app.
 
-To keep it running after you close the terminal, use one of the options in [Run it in the background](#run-it-in-the-background).
+The HUD follows the same safety rules as the desktop app:
 
-## Commands
+- Prompts only go to agents that are ready. A busy agent, or one waiting on an approval, won't take a prompt from the HUD.
+- Every send first checks that it's still the same agent in that pane.
+- If delivery is uncertain, your draft is kept.
 
-| You send | What happens |
+**From a Telegram ping:**
+
+| You do | What happens |
 | --- | --- |
-| *any text* | Sends that text as a prompt to the agent you're talking to |
-| *reply to a ping* | Sends your text as a prompt to the agent in that ping |
-| `/agents` | Lists your agents and their status. Tap one to talk to it |
-| `/use 2` | Talk to agent #2. You can also use a name or a pane id like `w1:p2` |
-| `/read` | Shows the agent's last 25 lines. `/read 100` shows more |
-| `/to 2 run the tests` | Sends one message to agent #2 without switching to it |
-| `/keys esc` | Sends keys. Some examples: `enter`, `esc`, `up`, `2 enter`, `ctrl+c` |
-| `/stop` | Sends Esc, which interrupts Claude Code or Codex |
-| `/mute` / `/unmute` | Pauses or resumes notifications |
+| Reply to a ping | Sends your reply as a prompt to that agent |
+| Tap **1 / 2 / 3 / Enter / y / n / Esc / Ctrl‑C** | Sends that key to the agent, for approvals and menus |
+| Tap **🖥 Open HUD** | Opens the full HUD |
+| `/agents` | Lists your agents. Tap one to talk to it, then just type |
+| `/read`, `/read 100` | Shows the agent's latest output |
+| `/to 2 run the tests` | Sends one message to agent #2 |
+| `/keys esc`, `/stop` | Sends keys, or interrupts the agent |
+| `/hud` | Sends you the private HUD link |
+| `/mute`, `/unmute` | Pauses or resumes pings |
 
-When an agent is waiting on an approval, herdr-phone **won't type over the prompt**. It shows you the buttons instead. This matches herdr's own `agent_blocked` safety check.
+Approvals work differently in the two places. In the HUD, answer them from Herdr itself, as the desktop HUD does. In Telegram, use the key buttons.
 
 ## Settings (`.env`)
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `TELEGRAM_BOT_TOKEN` | – | The token from @BotFather (required) |
-| `TELEGRAM_CHAT_ID` | – | Your chat id (required). Messages from any other chat are ignored |
-| `HERDR_PHONE_NOTIFY` | `blocked,done` | Which status changes ping you. Add `working` if you want a ping when an agent starts |
-| `HERDR_PHONE_TAIL_LINES` | `25` | How many output lines a ping includes |
-| `HERDR_PHONE_POLL_SECONDS` | `2` | How often the bot checks herdr for status changes |
-| `HERDR_SESSION` / `HERDR_SOCKET_PATH` | herdr default | Which herdr session to use. This works the same way as in the herdr CLI |
+| `HUD_PORT` | `8787` | Port for the phone HUD. `0` turns it off |
+| `HUD_HOST` | `0.0.0.0` | Address to listen on. Set `127.0.0.1` if you put it behind your own proxy |
+| `HUD_PUBLIC_URL` | auto | The link to print and send, e.g. `http://desktop.your-tailnet.ts.net:8787` |
+| `HUD_MACHINE_LABEL` | hostname | The name the HUD shows for this computer |
+| `HUD_TOKEN` | random | Fixed secret instead of the generated one, which is stored in `~/.config/herdr-phone/hud-token` |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | – | Turns on Telegram pings. Messages from any other chat are ignored |
+| `HERDR_PHONE_NOTIFY` | `blocked,done` | Which status changes ping you |
+| `HERDR_SESSION` / `HERDR_SOCKET_PATH` | Herdr default | Which Herdr session to use |
 
-## Run it in the background
+To get a new HUD link and log out every phone, delete `~/.config/herdr-phone/hud-token` and restart.
 
-**tmux / a herdr pane:** Run it in a herdr pane of its own. That's simple and it's enough for most people.
+## Keep it running
 
-**Linux (systemd user service):**
-
-```bash
-mkdir -p ~/.config/systemd/user
-cp herdr-phone.service ~/.config/systemd/user/
-# edit WorkingDirectory in the file if you cloned somewhere other than ~/herdr-phone
-systemctl --user enable --now herdr-phone
-journalctl --user -u herdr-phone -f
-```
-
-**macOS:**
-
-```bash
-nohup python3 herdr_phone.py > ~/herdr-phone.log 2>&1 &
-```
-
-## Tips
-
-- In Telegram, turn notifications **on** for your bot and switch on **Show preview**. Then a ping shows the agent's question right in the banner.
-- To answer from the banner without leaving your game, long-press the notification (iOS) or tap **Reply** (Android).
-- If you run herdr on a server, run herdr-phone on that server too. It only needs outbound internet access.
+- **Easiest:** run it in a Herdr pane of its own.
+- **Linux:** `cp herdr-phone.service ~/.config/systemd/user/ && systemctl --user enable --now herdr-phone`. Edit `WorkingDirectory` in the file if you cloned it somewhere other than `~/herdr-hud-mobile`.
+- **macOS:** `nohup python3 herdr_phone.py > ~/herdr-phone.log 2>&1 &`
 
 ## Security
 
-Whoever controls the bot can type into your terminals. Keep these points in mind:
+The HUD and the bot can type into your agents' terminals, so treat the link and the bot token like passwords.
 
-- The bot answers **one** chat id only. Messages from anyone else are dropped without a reply.
-- Keep your bot token secret. `.env` is already git-ignored. If the token leaks, send `/revoke` to @BotFather.
-- Telegram can read your bot messages, because bot chats aren't end-to-end encrypted. Don't use herdr-phone for agents that print secrets.
+- **HUD:** every request needs the secret link or the cookie it sets. The cookie is HttpOnly and SameSite=Strict, and actions also need a header that other websites can't send.
+- **Telegram:** the bot only answers your chat id. Messages from anyone else are dropped without a reply.
+- **Don't** forward port 8787 on your router. Use Tailscale instead.
+- Telegram can see ping contents, which include recent agent output. Leave Telegram off if your agents print secrets; the HUD on its own never leaves your network.
+
+## How it works
+
+The desktop Herdr HUD is a native window, written in Swift or C#, that hosts a web UI. The web UI asks the native code for things like `ready`, `refresh`, `output` and `prompt`. This project is a third host for that same UI:
+
+- `hud_server.py` answers those requests over HTTP and Server-Sent Events, using Herdr's socket API (`agent.list`, `agent.get`, `agent.read`, `agent.prompt`).
+- `web/` is Herdr HUD's UI with a small HTTP bridge and a phone layout added. The desktop look and behavior are unchanged.
+- `herdr_phone.py` starts the HUD server and runs the optional Telegram bot.
+
+The phone HUD only sees the agents in the Herdr session on the computer it runs on. To cover more machines, run it on each one.
 
 ## Development
 
 ```bash
-python3 -m unittest -v test_herdr_phone
+python3 -m unittest -v test_herdr_phone test_hud_server
+node --test tests/*.test.cjs
 ```
 
-The tests use a fake herdr socket server and a stub Telegram client, so they don't need herdr or a network connection.
+The tests use a fake Herdr socket server, so they don't need Herdr, Telegram, or a network connection.
+
+## Credits
+
+The UI in `web/` comes from [finna/herdr-hud](https://github.com/finna/herdr-hud) (MIT, © 2026 Alex Finn). Its license is in [`web/LICENSE-herdr-hud`](web/LICENSE-herdr-hud).

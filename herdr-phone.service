@@ -1,10 +1,10 @@
 [Unit]
-Description=herdr-phone (Telegram bridge for herdr agents)
+Description=herdr-phone (Herdr HUD on your phone + Telegram pings)
 After=network-online.target
 
 [Service]
-WorkingDirectory=%h/herdr-phone
-ExecStart=/usr/bin/env python3 %h/herdr-phone/herdr_phone.py
+WorkingDirectory=%h/herdr-hud-mobile
+ExecStart=/usr/bin/env python3 %h/herdr-hud-mobile/herdr_phone.py
 Restart=always
 RestartSec=5
 

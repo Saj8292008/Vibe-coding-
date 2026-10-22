@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""herdr-phone: talk to your herdr agents from your phone via Telegram.
+"""herdr-phone: Herdr HUD for your phone, plus Telegram pings.
 
-Runs on the same machine as herdr. It talks to herdr's local socket API and
-to Telegram over outbound HTTPS only (long polling), so you don't need to open
-ports, set up a tunnel, or keep an SSH session alive on your phone.
+Runs on the same machine as herdr and talks to herdr's local socket API.
 
-  * Pings you when an agent finishes or needs approval (shows up as a normal
-    notification banner over Instagram, games, whatever).
-  * Reply to a notification to send that agent a prompt.
-  * Tap buttons to approve / pick options / interrupt.
+  * Phone HUD: the Herdr HUD agent panel (https://github.com/finna/herdr-hud),
+    served to your phone's browser over Tailscale or Wi-Fi. Add it to your home
+    screen, read agents' output, and send prompts. See hud_server.py.
+  * Telegram pings (optional): a notification when an agent finishes or needs
+    approval. It shows over Instagram or a game. Reply to it to prompt that
+    agent, or tap a button to approve.
 
 Python 3.9+ standard library only. See README.md for setup.
 """
@@ -41,6 +41,7 @@ NOTIFY_ON = set(
 )
 
 TELEGRAM_MAX = 4096
+HUD_LINKS: list[str] = []  # filled in by main() once the phone HUD is serving
 STATUS_EMOJI = {
     "working": "🔵",
     "blocked": "🟡",
@@ -181,7 +182,7 @@ def action_buttons(target: str) -> list[list[dict]]:
         [b("1", "k:1"), b("2", "k:2"), b("3", "k:3"), b("⏎ Enter", "k:enter")],
         [b("✅ y", "k:y"), b("❌ n", "k:n"), b("⎋ Esc", "k:esc"), b("⛔ Ctrl-C", "k:ctrl+c")],
         [b("📜 Show more", "read"), b("🎯 Talk to this one", "use")],
-    ]
+    ] + ([[{"text": "🖥 Open HUD", "url": HUD_LINKS[0]}]] if HUD_LINKS else [])
 
 
 # ------------------------------------------------------------------- bot ----
@@ -204,8 +205,15 @@ class Bridge:
         try:
             msg = self.tg.send(self.chat_id, text, buttons, reply_to)
         except Exception as e:  # never let a send failure kill a loop
-            print(f"[herdr-phone] send failed: {e}", file=sys.stderr)
-            return
+            # Telegram refuses some URL buttons (e.g. plain LAN IPs); retry without them.
+            plain = [[b for b in row if "url" not in b] for row in buttons or []]
+            try:
+                if plain == (buttons or []):
+                    raise e
+                msg = self.tg.send(self.chat_id, text, [r for r in plain if r] or None, reply_to)
+            except Exception as e2:
+                print(f"[herdr-phone] send failed: {e2}", file=sys.stderr)
+                return
         if target:
             self.msg_target[msg["message_id"]] = target
             if len(self.msg_target) > 500:
@@ -375,6 +383,16 @@ class Bridge:
             if t:
                 self.herdr.keys(t, ["esc"])
                 self.say(f"⎋ sent Esc to <b>{html.escape(t)}</b>", target=t)
+        elif cmd == "/hud":
+            if HUD_LINKS:
+                links = "\n".join(html.escape(u) for u in HUD_LINKS)
+                self.say(
+                    "🖥 <b>Herdr HUD on your phone</b>\nOpen this on your phone "
+                    "(Tailscale or the same Wi-Fi), then Share → <i>Add to Home Screen</i>:\n"
+                    f"{links}\n<i>This link is your password. Don't share it.</i>"
+                )
+            else:
+                self.say("The phone HUD is turned off (HUD_PORT=0).")
         elif cmd == "/mute":
             self.muted = True
             self.say("🔕 Muted. I'll stay quiet until /unmute.")
@@ -453,6 +471,7 @@ HELP = """<b>herdr-phone</b> 📱 → 🐑
 /to 2 fix the test — one-off message to agent #2
 /keys esc — send keys (enter, esc, up, 1, ctrl+c…)
 /stop — send Esc (interrupt Claude/Codex)
+/hud — link to the full Herdr HUD in your phone's browser
 /mute · /unmute — pause notifications
 
 You'll get pinged when an agent 🟡 needs you or ✅ finishes."""
@@ -494,12 +513,11 @@ def main(argv: list[str]) -> int:
     BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-    if not BOT_TOKEN:
-        print("Set TELEGRAM_BOT_TOKEN (from @BotFather). See README.md.", file=sys.stderr)
-        return 2
-    tg = Telegram(BOT_TOKEN)
-    if "--whoami" in argv or not CHAT_ID:
-        find_chat_id(tg)
+    if "--whoami" in argv:
+        if not BOT_TOKEN:
+            print("Set TELEGRAM_BOT_TOKEN (from @BotFather) first. See README.md.", file=sys.stderr)
+            return 2
+        find_chat_id(Telegram(BOT_TOKEN))
         return 0
 
     herdr = Herdr(socket_path())
@@ -509,9 +527,37 @@ def main(argv: list[str]) -> int:
     except (OSError, HerdrError) as e:
         print(f"[herdr-phone] herdr not reachable yet ({e}); will keep trying", file=sys.stderr)
 
-    bridge = Bridge(herdr, tg, CHAT_ID)
+    port = int(os.environ.get("HUD_PORT", "8787"))
+    if port:
+        import hud_server
+
+        state = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "herdr-phone"
+        try:
+            _, links = hud_server.start(herdr, os.environ.get("HUD_HOST", "0.0.0.0"), port, state)
+        except OSError as e:
+            print(f"[herdr-phone] couldn't start the phone HUD on port {port}: {e}", file=sys.stderr)
+            return 1
+        HUD_LINKS[:] = links
+        print("[herdr-phone] phone HUD — open on your phone, then Add to Home Screen:")
+        for link in links:
+            print(f"    {link}")
+
+    if not BOT_TOKEN or not CHAT_ID:
+        if not port:
+            print("Nothing to do: set TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID or enable the HUD.", file=sys.stderr)
+            return 2
+        print(
+            "[herdr-phone] Telegram pings are off (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID; "
+            "run with --whoami to find your chat id)."
+        )
+        try:
+            threading.Event().wait()
+        except KeyboardInterrupt:
+            return 0
+
+    bridge = Bridge(herdr, Telegram(BOT_TOKEN), CHAT_ID)
     threading.Thread(target=bridge.watch_forever, daemon=True).start()
-    bridge.say("📱 herdr-phone is online. Send /agents to see who's working.")
+    bridge.say("📱 herdr-phone is online. Send /agents to see who's working, or /hud for the full HUD.")
     try:
         bridge.poll_forever()
     except KeyboardInterrupt:

@@ -26,6 +26,7 @@ class FakeHerdr:
              "focused": False, "agent": "codex", "name": "reviewer", "agent_status": "idle"},
         ]
         self.calls = []
+        self.prompts = []
         self.srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.srv.bind(self.path)
         self.srv.listen()
@@ -46,13 +47,23 @@ class FakeHerdr:
         m, p, rid = req["method"], req["params"], req["id"]
         if m == "agent.list":
             return {"id": rid, "result": {"type": "agent_list", "agents": self.agents}}
+        if m == "agent.get":
+            a = next((a for a in self.agents if p["target"] in (a["pane_id"], a.get("name"))), None)
+            if not a:
+                return {"id": rid, "error": {"code": "not_found", "message": "agent not found"}}
+            return {"id": rid, "result": {"type": "agent_info", "agent": a}}
+        if m == "workspace.list":
+            return {"id": rid, "result": {"type": "workspace_list", "workspaces": [{"workspace_id": "w1", "label": "api"}]}}
+        if m == "tab.list":
+            return {"id": rid, "result": {"type": "tab_list", "tabs": [{"tab_id": "w1:t1", "label": "main"}]}}
         if m == "agent.read":
             return {"id": rid, "result": {"type": "pane_read", "read": {"text": f"output of {p['target']}"}}}
         if m == "agent.prompt":
             st = next(a for a in self.agents if p["target"] in (a["pane_id"], a.get("name")))
             if st["agent_status"] == "blocked":
                 return {"id": rid, "error": {"code": "agent_blocked", "message": "blocked"}}
-            return {"id": rid, "result": {"type": "ok"}}
+            self.prompts.append(p)
+            return {"id": rid, "result": {"type": "agent_prompted", "agent": st}}
         if m in ("agent.send_keys", "ping"):
             return {"id": rid, "result": {"type": "ok"}}
         return {"id": rid, "error": {"code": "unknown_method", "message": m}}
