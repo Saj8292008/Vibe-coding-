@@ -1,0 +1,12 @@
+[Unit]
+Description=herdr-phone (Telegram bridge for herdr agents)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/herdr-phone
+ExecStart=/usr/bin/env python3 %h/herdr-phone/herdr_phone.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
