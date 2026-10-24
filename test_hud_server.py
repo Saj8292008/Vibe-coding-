@@ -10,6 +10,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from urllib.parse import urlencode
 
 os.environ["HUD_ROSTER_SECONDS"] = "0.2"
 os.environ["HUD_TOKEN"] = "test-token-0123456789abcdef"
@@ -113,6 +114,21 @@ class HudServerTest(unittest.TestCase):
         self.assertEqual(self.req("GET", "/?token=wrong")[0].status, 401)
         self.assertEqual(self.req("GET", "/", headers={"Cookie": "herdr_hud=wrong"})[0].status, 401)
         self.assertEqual(self.req("POST", "/api/op", b"{}")[0].status, 401)
+
+    def test_home_screen_app_signs_itself_in(self):
+        r, body = self.req("GET", "/")
+        self.assertEqual(r.status, 401)
+        self.assertIn(b"<form", body)
+        anon = json.loads(self.req("GET", "/manifest.webmanifest")[1])
+        self.assertNotIn(TOKEN, anon["start_url"])
+        self.assertEqual(json.loads(self.req("GET", "/manifest.webmanifest?t=wrong")[1])["start_url"], "./")
+        cookie = self.login()
+        page = self.req("GET", "/", headers={"Cookie": cookie})[1]
+        self.assertIn(f"manifest.webmanifest?t={TOKEN}".encode(), page)
+        signed = json.loads(self.req("GET", f"/manifest.webmanifest?t={TOKEN}")[1])
+        self.assertEqual(signed["start_url"], f"./?token={TOKEN}")
+        pasted = f"https://example.ts.net:8443/?token={TOKEN}"
+        self.assertEqual(self.req("GET", "/?" + urlencode({"token": pasted}))[0].status, 303)
 
     def test_serves_ui_and_blocks_traversal(self):
         cookie = self.login()

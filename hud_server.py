@@ -242,6 +242,16 @@ class Hub:
         # badge, alert, alertPreview, close, hide: desktop window chrome; nothing to do on a phone.
 
 
+SIGN_IN_PAGE = b"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Herdr HUD</title>
+<style>body{margin:0;padding:24px 16px;background:#12161d;color:#e6e9ef;font:16px -apple-system,system-ui,sans-serif}
+input,button{box-sizing:border-box;width:100%;font:inherit;padding:12px;margin-top:12px;border-radius:8px;border:1px solid #39424f}
+input{background:#1b212b;color:inherit}button{background:#3b82f6;color:#fff;border:0}</style></head><body>
+<h1>Herdr HUD</h1><p>Not signed in. Paste the link from herdr-phone (or from /hud in Telegram).</p>
+<form action="./" method="get"><input name="token" placeholder="https://...?token=..." autocomplete="off" autocapitalize="off" required>
+<button>Sign in</button></form></body></html>"""
+
+
 def make_handler(hub: Hub, token: str):
     class Handler(BaseHTTPRequestHandler):
         server_version = "herdr-hud-mobile"
@@ -269,17 +279,23 @@ def make_handler(hub: Hub, token: str):
 
         def do_GET(self):
             url = urlparse(self.path)
-            given = parse_qs(url.query).get("token", [""])[0]
+            given = parse_qs(url.query).get("token", [""])[0].strip()
+            if "token=" in given:  # a whole link pasted into the sign-in form
+                given = parse_qs(urlparse(given).query).get("token", [""])[0]
             if given:
                 if hmac.compare_digest(given, token):
                     # Swap the token in the URL for a cookie so it doesn't sit in history.
                     c = f"{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000"
                     return self._send(303, extra=[("Set-Cookie", c), ("Location", "./")])
                 return self._send(401, b"That link is out of date. Use the latest link from herdr-phone.")
+            if url.path == "/manifest.webmanifest":
+                return self._manifest(url)
             if not self._authed():
-                # The manifest and icon are fetched without cookies by some browsers.
-                if url.path in ("/manifest.webmanifest", "/icon.svg", "/icon-180.png"):
+                # The icons are fetched without cookies by some browsers.
+                if url.path in ("/icon.svg", "/icon-180.png"):
                     return self._static(url.path)
+                if url.path in ("", "/"):
+                    return self._send(401, SIGN_IN_PAGE, "text/html; charset=utf-8")
                 return self._send(
                     401,
                     b"Open the link printed by herdr-phone (or send /hud to your Telegram bot).",
@@ -299,7 +315,20 @@ def make_handler(hub: Hub, token: str):
             ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
             if ctype.startswith("text/") or ctype.endswith(("javascript", "json")):
                 ctype += "; charset=utf-8"
-            self._send(200, target.read_bytes(), ctype)
+            body = target.read_bytes()
+            if name == "index.html":
+                # iOS fetches the manifest without cookies, so the page hands it the token.
+                body = body.replace(b'href="manifest.webmanifest"', f'href="manifest.webmanifest?t={token}"'.encode())
+            self._send(200, body, ctype)
+
+        def _manifest(self, url):
+            # A Home Screen app on iOS gets its own empty cookie jar, so when the
+            # caller is signed in its start_url carries the token to sign itself in.
+            data = json.loads((WEB_ROOT / "manifest.webmanifest").read_text())
+            given = parse_qs(url.query).get("t", [""])[0]
+            if self._authed() or (given and hmac.compare_digest(given, token)):
+                data["start_url"] = f"./?token={token}"
+            self._send(200, json.dumps(data).encode(), "application/manifest+json; charset=utf-8")
 
         def _events(self):
             cid, q = hub.open()
